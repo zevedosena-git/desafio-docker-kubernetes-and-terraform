@@ -44,7 +44,7 @@ services:
       - ./app/api:/src:ro
     command: [go, run, .]
     environment:
-      DATABASE_URL: ${DATABASE_URL:?Defina DATABASE_URL externamente com componentes URI codificados}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-mural}:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD externamente}@db:5432/${POSTGRES_DB:-mural}?sslmode=disable}
       PORT: "8080"
     depends_on:
       db:

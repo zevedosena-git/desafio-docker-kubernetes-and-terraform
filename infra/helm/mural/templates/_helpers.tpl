@@ -31,8 +31,11 @@ containers:
           fi
           sleep 2
         done
-        exec psql --no-psqlrc "$DATABASE_URL" --single-transaction -v ON_ERROR_STOP=1 \
-          -f /migrations/001_init.sql -f /migrations/002_seed.sql
+        set --
+        for migration in /migrations/*.sql; do
+          set -- "$@" -f "$migration"
+        done
+        exec psql --no-psqlrc "$DATABASE_URL" --single-transaction -v ON_ERROR_STOP=1 "$@"
     env:
       - name: DATABASE_URL
         valueFrom:

@@ -1,11 +1,11 @@
 variable "postgres_password" {
-  description = "Senha externa; reutilize a mesma entrada nos dois applies e no destroy."
+  description = "Senha do Postgres, via TF_VAR_postgres_password (.env). Não troque depois do primeiro apply."
   type        = string
   sensitive   = true
   nullable    = false
   validation {
     condition     = length(var.postgres_password) > 0
-    error_message = "Forneça postgres_password externamente, sem senha padrão."
+    error_message = "Defina TF_VAR_postgres_password no .env e carregue-o na sessão."
   }
 }
 

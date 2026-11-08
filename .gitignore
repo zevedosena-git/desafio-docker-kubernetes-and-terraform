@@ -6,7 +6,6 @@
 **/.terraform/*
 *.tfstate
 *.tfstate.*
-.terraform.lock.hcl
 solucao/terraform/.kube/
 
 # Node / misc
@@ -14,3 +13,13 @@ node_modules/
 .DS_Store
 
 /solucao
+
+# Entradas e artefatos locais do Mural
+/.env
+/.env.*
+!/.env.example
+/infra/terraform/*.tfvars
+/infra/terraform/*.tfvars.json
+/infra/terraform/*.tfplan
+/infra/terraform/.mural-*.kubeconfig
+/infra/.local/

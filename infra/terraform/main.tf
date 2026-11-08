@@ -2,15 +2,22 @@ locals {
   repo_root       = abspath("${path.module}/../..")
   chart_path      = abspath("${path.module}/../helm/mural")
   kubeconfig_path = abspath("${path.module}/.mural-${var.cluster_name}.kubeconfig")
-  platform        = "linux/amd64"
+  is_windows      = length(regexall("^[A-Za-z]:", abspath(path.root))) > 0
+  shell = local.is_windows ? {
+    interpreter = ["PowerShell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]
+    extension   = "ps1"
+    } : {
+    interpreter = ["/bin/sh"]
+    extension   = "sh"
+  }
+  scripts_dir = abspath("${path.module}/scripts")
   source_files = {
     api = concat(["app/docker/api.Dockerfile", "app/api/go.mod", "app/api/go.sum"], [for f in sort(tolist(fileset(local.repo_root, "app/api/*.go"))) : f])
     web = concat(["app/docker/web.Dockerfile"], sort(tolist(fileset(local.repo_root, "app/web/*"))))
   }
   source_hashes = {
     for component, paths in local.source_files : component => sha256(jsonencode({
-      platform = local.platform
-      files    = { for p in paths : p => filesha256("${local.repo_root}/${p}") }
+      for p in paths : p => filesha256("${local.repo_root}/${p}")
     }))
   }
   image_repositories = { for component in keys(local.source_files) : component => "mural-${var.cluster_name}-${component}" }
@@ -23,32 +30,25 @@ resource "terraform_data" "kubeconfig" {
   input = {
     path    = local.kubeconfig_path
     cluster = var.cluster_name
+    shell   = local.shell
+    scripts = local.scripts_dir
   }
   triggers_replace = [local.kubeconfig_path]
 
   provisioner "local-exec" {
-    interpreter = ["PowerShell", "-NoProfile", "-NonInteractive", "-Command"]
+    interpreter = self.input.shell.interpreter
     environment = {
       MURAL_KUBECONFIG = self.input.path
       MURAL_CLUSTER    = self.input.cluster
     }
-    command = <<-PS
-      $ErrorActionPreference = 'Stop'
-      if (Test-Path -LiteralPath $env:MURAL_KUBECONFIG) { throw 'Kubeconfig exclusivo já existe; não sobrescrever arquivo fora deste estado.' }
-      $clusters = & kind get clusters
-      if ($LASTEXITCODE -ne 0) { throw 'Não foi possível consultar clusters kind' }
-      if ($clusters -contains $env:MURAL_CLUSTER) { throw 'Nome de cluster já utilizado fora deste estado' }
-      $contexts = & kubectl config get-contexts -o name
-      if ($LASTEXITCODE -ne 0) { throw 'Não foi possível consultar os contextos locais' }
-      if ($contexts -contains ('kind-' + $env:MURAL_CLUSTER)) { throw 'Contexto global já existente; escolha outro cluster_name' }
-    PS
+    command = "${self.input.scripts}/preflight.${self.input.shell.extension}"
   }
 
   provisioner "local-exec" {
     when        = destroy
-    interpreter = ["PowerShell", "-NoProfile", "-NonInteractive", "-Command"]
+    interpreter = self.input.shell.interpreter
     environment = { MURAL_KUBECONFIG = self.input.path }
-    command     = "if (Test-Path -LiteralPath $env:MURAL_KUBECONFIG) { Remove-Item -LiteralPath $env:MURAL_KUBECONFIG -ErrorAction Stop }"
+    command     = "${self.input.scripts}/remove-kubeconfig.${self.input.shell.extension}"
   }
 }
 
@@ -117,42 +117,28 @@ resource "terraform_data" "images" {
     image      = "${local.image_repositories[each.key]}:${local.image_tags[each.key]}"
     dockerfile = "${local.repo_root}/app/docker/${each.key}.Dockerfile"
     repo_root  = local.repo_root
-    platform   = local.platform
     cluster    = kind_cluster.mural.name
+    shell      = local.shell
+    scripts    = local.scripts_dir
   }
   triggers_replace = [local.source_hashes[each.key], sha256(kind_cluster.mural.kubeconfig)]
 
   provisioner "local-exec" {
-    interpreter = ["PowerShell", "-NoProfile", "-NonInteractive", "-Command"]
+    interpreter = self.input.shell.interpreter
     environment = {
       MURAL_IMAGE      = self.input.image
       MURAL_DOCKERFILE = self.input.dockerfile
       MURAL_REPO_ROOT  = self.input.repo_root
-      MURAL_PLATFORM   = self.input.platform
       MURAL_CLUSTER    = self.input.cluster
     }
-    command = <<-PS
-      $ErrorActionPreference = 'Stop'
-      & docker build --platform $env:MURAL_PLATFORM -f $env:MURAL_DOCKERFILE -t $env:MURAL_IMAGE $env:MURAL_REPO_ROOT
-      if ($LASTEXITCODE -ne 0) { throw 'Build da imagem falhou' }
-      & kind load docker-image $env:MURAL_IMAGE --name $env:MURAL_CLUSTER
-      if ($LASTEXITCODE -ne 0) { throw 'Carregamento da imagem no kind falhou' }
-    PS
+    command = "${self.input.scripts}/build-load-image.${self.input.shell.extension}"
   }
 
   provisioner "local-exec" {
     when        = destroy
-    interpreter = ["PowerShell", "-NoProfile", "-NonInteractive", "-Command"]
+    interpreter = self.input.shell.interpreter
     environment = { MURAL_IMAGE = self.input.image }
-    command     = <<-PS
-      $ErrorActionPreference = 'Stop'
-      $imageId = & docker image ls --quiet $env:MURAL_IMAGE
-      if ($LASTEXITCODE -ne 0) { throw 'Consulta da tag gerenciada falhou' }
-      if ($imageId) {
-        & docker image rm $env:MURAL_IMAGE
-        if ($LASTEXITCODE -ne 0) { throw 'Remoção da tag gerenciada falhou' }
-      }
-    PS
+    command     = "${self.input.scripts}/remove-image.${self.input.shell.extension}"
   }
 }
 
