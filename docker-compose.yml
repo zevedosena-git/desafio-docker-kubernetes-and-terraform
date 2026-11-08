@@ -1,0 +1,75 @@
+name: mural-compose
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mural}
+      POSTGRES_DB: ${POSTGRES_DB:-mural}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD externamente}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-mural}
+      PGDATABASE: ${POSTGRES_DB:-mural}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD externamente}
+    volumes:
+      - ./app/api/migrations:/migrations:ro
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        set --
+        for migration in /migrations/*.sql; do
+          set -- "$$@" -f "$$migration"
+        done
+        exec psql --no-psqlrc --single-transaction -v ON_ERROR_STOP=1 "$$@"
+    restart: "no"
+
+  api:
+    image: golang:1.23-alpine
+    working_dir: /src
+    volumes:
+      - ./app/api:/src:ro
+    command: [go, run, .]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Defina DATABASE_URL externamente com componentes URI codificados}
+      PORT: "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/readyz]
+      interval: 3s
+      timeout: 3s
+      retries: 90
+      start_period: 10s
+
+  web:
+    image: nginx:1.27-alpine
+    environment:
+      API_UPSTREAM: api:8080
+    volumes:
+      - ./app/web:/usr/share/nginx/html:ro
+      - ./app/web/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

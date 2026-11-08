@@ -1,0 +1,50 @@
+api:
+  image:
+    repository: mural-mba-api
+    tag: local
+    pullPolicy: IfNotPresent
+  replicas: 2
+  port: 8080
+  servicePort: 80
+  resources:
+    requests: {cpu: 50m, memory: 32Mi}
+    limits: {cpu: 500m, memory: 128Mi}
+
+web:
+  image:
+    repository: mural-mba-web
+    tag: local
+    pullPolicy: IfNotPresent
+  replicas: 2
+  servicePort: 80
+  resources:
+    requests: {cpu: 25m, memory: 16Mi}
+    limits: {cpu: 250m, memory: 64Mi}
+
+postgres:
+  image:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+  user: mural
+  database: mural
+  # Obrigatória por entrada externa; nunca preencher com credencial real.
+  password: ""
+  storage:
+    size: 1Gi
+    # Vazio usa a StorageClass padrão do kind.
+    className: ""
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+migration:
+  activeDeadlineSeconds: 300
+  backoffLimit: 1
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 250m, memory: 128Mi}
+
+ingress:
+  className: traefik
+  host: mural.localtest.me

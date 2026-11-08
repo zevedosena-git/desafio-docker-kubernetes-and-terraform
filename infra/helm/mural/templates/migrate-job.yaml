@@ -1,0 +1,18 @@
+{{- $podSpec := include "mural.migrationPodSpec" . -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mural.fullname" . }}-migrate-{{ $podSpec | sha256sum | trunc 12 }}
+  labels:
+    {{- include "mural.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+spec:
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "mural.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      {{- $podSpec | nindent 6 }}
